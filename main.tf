@@ -1,16 +1,3 @@
-terraform {
-  required_providers {
-    aws = {
-      source  = "hashicorp/aws"
-      version = "~> 5.0"
-    }
-  }
-}
-
-provider "aws" {
-  region = "us-east-1"
-}
-
 # Use Default VPC (do not create a new VPC)
 data "aws_vpc" "default" {
   default = true
@@ -48,7 +35,7 @@ resource "aws_security_group" "jenkins_sg" {
     from_port   = 22
     to_port     = 22
     protocol    = "tcp"
-    cidr_blocks = ["174.110.65.46/32"]
+    cidr_blocks = [var.my_ip]
   }
 
   ingress {
@@ -70,7 +57,7 @@ resource "aws_security_group" "jenkins_sg" {
 
 # S3 bucket for Jenkins artifacts (not public)
 resource "aws_s3_bucket" "jenkins_artifacts" {
-  bucket = "jenkins-artifacts-cap-terraform-2026"
+  bucket = var.bucket_name
 }
 
 resource "aws_s3_bucket_public_access_block" "jenkins_artifacts_block" {
@@ -85,14 +72,12 @@ resource "aws_s3_bucket_public_access_block" "jenkins_artifacts_block" {
 # EC2 instance bootstrapped with Jenkins install + start
 resource "aws_instance" "jenkins" {
   ami                    = data.aws_ami.ubuntu_2204.id
-  instance_type          = "t3.micro"
+  instance_type          = var.instance_type
   subnet_id              = data.aws_subnets.default_vpc_subnets.ids[0]
   vpc_security_group_ids = [aws_security_group.jenkins_sg.id]
 
-  # IMPORTANT:
-  # This must be the AWS Key Pair NAME (from EC2 > Key Pairs), not the .pem filename.
-  # If your key pair name in AWS is different, change it here.
-  key_name = "terraform-key"
+
+  key_name = var.key_pair_name
 
   user_data = <<-EOF
               #!/bin/bash

@@ -1,0 +1,5 @@
+aws_region    = "us-east-1"
+instance_type = "t3.micro"
+key_pair_name = "terraform-key"
+my_ip         = "174.110.65.46/32"
+bucket_name   = "jenkins-artifacts-cap-terraform-2026"
