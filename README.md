@@ -1,3 +1,5 @@
+# AWS Terraform Project: Jenkins Server (Foundational → Advanced → Complex)
+
 ## Project Summary
 
 This project demonstrates how to deploy a Jenkins CI/CD server on AWS using Terraform across three progressive infrastructure tiers.
