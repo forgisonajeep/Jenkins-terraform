@@ -1,3 +1,23 @@
+## Project Summary
+
+This project demonstrates how to deploy a Jenkins CI/CD server on AWS using Terraform across three progressive infrastructure tiers.
+
+The infrastructure includes:
+
+- An EC2 instance running Jenkins
+- A security group allowing SSH (restricted) and Jenkins web access (8080)
+- A private S3 bucket for Jenkins artifact storage
+- A refactored Terraform configuration using variables and provider separation
+- An IAM role and instance profile enabling secure S3 access from the EC2 instance without static credentials
+
+The project is implemented in three stages:
+
+- **Foundational** – Single Terraform configuration deploying Jenkins infrastructure
+- **Advanced** – Terraform refactor using variables and provider separation
+- **Complex** – IAM role-based S3 access from the Jenkins EC2 instance
+
+This README includes all file contents for each tier so the project can be recreated from scratch.
+
 ## Table of Contents
 
 - [What This Deploys (Final / Complex)](#what-this-deploys-final--complex)
@@ -24,15 +44,6 @@
 - [TEARDOWN (Avoid AWS Charges)](#teardown-avoid-aws-charges)
 - [Author](#author)
 
-# AWS Terraform Project: Jenkins Server (Foundational → Advanced → Complex)
-
-This repository documents how to deploy a Jenkins server on AWS using Terraform, completed in three tiers:
-
-1) Foundational (Single main.tf monolith, hardcoded values allowed)
-2) Advanced (Refactor: providers.tf + variables.tf + terraform.tfvars, no hardcoding in main.tf)
-3) Complex (IAM Role + Instance Profile for secure S3 read/write from EC2 without static credentials)
-
-This README includes all file contents for each tier so the project can be recreated from scratch.
 
 --------------------------------------------------------------------
 
