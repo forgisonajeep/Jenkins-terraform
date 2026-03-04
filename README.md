@@ -1,387 +1,538 @@
-# Jenkins on AWS with Terraform
-### Infrastructure as Code Deployment with IAM Role-Based S3 Artifact Storage
+# AWS Terraform Project: Jenkins Server (Foundational → Advanced → Complex)
 
----
+This repository documents how to deploy a Jenkins server on AWS using Terraform, completed in three tiers:
 
-## Project Overview
+1) Foundational (Single main.tf monolith, hardcoded values allowed)
+2) Advanced (Refactor: providers.tf + variables.tf + terraform.tfvars, no hardcoding in main.tf)
+3) Complex (IAM Role + Instance Profile for secure S3 read/write from EC2 without static credentials)
 
-This project demonstrates how to deploy a Jenkins server on AWS using **Terraform**. The infrastructure is provisioned entirely through **Infrastructure as Code (IaC)**, allowing the environment to be consistently recreated across environments and tracked through version control.
+This README includes all file contents for each tier so the project can be recreated from scratch.
 
-The deployment includes:
+--------------------------------------------------------------------
 
-- An EC2 instance running Jenkins
-- A security group allowing Jenkins access on port 8080
-- SSH access restricted to a specific IP
-- An S3 bucket used for Jenkins artifact storage
-- An IAM role attached to the EC2 instance allowing secure S3 access
-- Terraform configuration refactored for maintainability and reusability
+## What This Deploys (Final / Complex)
 
-The project is implemented in three tiers:
+- 1 EC2 instance (Ubuntu 22.04) running Jenkins
+- Security Group:
+  - SSH (22) allowed only from <MY_PUBLIC_IP>/32
+  - Jenkins UI (8080) open for browser access
+- 1 S3 bucket for Jenkins artifacts (public access blocked)
+- IAM policy + role + instance profile:
+  - EC2 can List/Get/Put objects to the artifact bucket using role-based access
 
-1. **Foundational** – Basic Jenkins infrastructure deployment using Terraform  
-2. **Advanced** – Refactored Terraform configuration using variables and provider separation  
-3. **Complex** – IAM role-based S3 access from the Jenkins EC2 instance  
+--------------------------------------------------------------------
 
----
+## Prerequisites
 
-# Prerequisites
-
-Before beginning the project, ensure the following tools and resources are available.
-
-Required:
-
-- AWS Account
+You need:
+- AWS account
 - Terraform installed
 - AWS CLI installed
-- AWS CLI configured with credentials
-- SSH key pair created in AWS
+- AWS credentials configured locally (aws configure)
+- An existing EC2 Key Pair created in AWS (for SSH)
+
+Recommended:
+    Terraform v1.5+
+    AWS CLI v2
+
+If needed, configure AWS CLI:
+    aws configure
+
+You must know these values before you deploy:
+- AWS region (example: us-east-1)
+- EC2 key pair name (example: terraform-key)
+- Your public IP in /32 (example: 203.0.113.10/32)
+- A globally unique S3 bucket name (example: jenkins-artifacts-yourname-2026)
+
+NOTE: S3 bucket names must be globally unique across ALL AWS accounts.
+
+--------------------------------------------------------------------
+
+# FOUNDATIONAL TIER
+## Goal
+Deploy Jenkins on EC2 + Security Group + private S3 bucket using a single monolithic main.tf file with hardcoded values.
+
+## Foundational Folder Setup
+
+Create a new folder (example):
+    jenkins-terraform-foundational
+
+Inside the folder, create ONE file:
+    main.tf
+
+--------------------------------------------------------------------
+
+## FOUNDATIONAL: main.tf (PASTE EXACTLY)
+
+IMPORTANT: Replace these placeholders before running Terraform:
+- <AWS_REGION>
+- <KEY_PAIR_NAME>
+- <MY_PUBLIC_IP>/32
+- <UNIQUE_BUCKET_NAME>
+
+    terraform {
+      required_providers {
+        aws = {
+          source  = "hashicorp/aws"
+          version = "~> 5.0"
+        }
+      }
+    }
+
+    provider "aws" {
+      region = "<AWS_REGION>"
+    }
+
+    data "aws_ami" "ubuntu" {
+      most_recent = true
+      owners      = ["099720109477"] # Canonical
+
+      filter {
+        name   = "name"
+        values = ["ubuntu/images/hvm-ssd/ubuntu-jammy-22.04-amd64-server-*"]
+      }
+    }
+
+    resource "aws_security_group" "jenkins_sg" {
+      name        = "jenkins-sg"
+      description = "Allow SSH from my IP and Jenkins web access on 8080"
+
+      ingress {
+        description = "SSH from my public IP"
+        from_port   = 22
+        to_port     = 22
+        protocol    = "tcp"
+        cidr_blocks = ["<MY_PUBLIC_IP>/32"]
+      }
 
-Recommended versions:
+      ingress {
+        description = "Jenkins web access"
+        from_port   = 8080
+        to_port     = 8080
+        protocol    = "tcp"
+        cidr_blocks = ["0.0.0.0/0"]
+      }
 
-```
-Terraform v1.5+
-AWS CLI v2
-```
+      egress {
+        description = "Allow all outbound"
+        from_port   = 0
+        to_port     = 0
+        protocol    = "-1"
+        cidr_blocks = ["0.0.0.0/0"]
+      }
+    }
+
+    resource "aws_s3_bucket" "jenkins_artifacts" {
+      bucket = "<UNIQUE_BUCKET_NAME>"
+    }
+
+    resource "aws_s3_bucket_public_access_block" "jenkins_artifacts_block" {
+      bucket = aws_s3_bucket.jenkins_artifacts.id
+
+      block_public_acls       = true
+      block_public_policy     = true
+      ignore_public_acls      = true
+      restrict_public_buckets = true
+    }
 
-Configure AWS credentials if not already configured:
+    resource "aws_instance" "jenkins" {
+      ami                    = data.aws_ami.ubuntu.id
+      instance_type          = "t3.micro"
+      key_name               = "<KEY_PAIR_NAME>"
+      vpc_security_group_ids = [aws_security_group.jenkins_sg.id]
 
-```
-aws configure
-```
+      user_data = <<-EOF
+                  #!/bin/bash
+                  apt-get update -y
+                  apt-get install -y fontconfig openjdk-17-jre
 
----
+                  curl -fsSL https://pkg.jenkins.io/debian-stable/jenkins.io-2023.key | tee \
+                    /usr/share/keyrings/jenkins-keyring.asc > /dev/null
+                  echo deb [signed-by=/usr/share/keyrings/jenkins-keyring.asc] \
+                    https://pkg.jenkins.io/debian-stable binary/ | tee \
+                    /etc/apt/sources.list.d/jenkins.list > /dev/null
 
-# Repository Structure
+                  apt-get update -y
+                  apt-get install -y jenkins
+                  systemctl enable jenkins
+                  systemctl start jenkins
+                  EOF
 
-```
-.
-├── main.tf
-├── providers.tf
-├── variables.tf
-├── terraform.tfvars
-├── README.md
-└── architecture
-    └── jenkins-terraform-architecture.png
-```
+      tags = {
+        Name = "jenkins-server"
+      }
+    }
 
-Explanation of files:
+    output "jenkins_public_ip" {
+      value = aws_instance.jenkins.public_ip
+    }
 
-- **main.tf** – Defines AWS infrastructure resources  
-- **providers.tf** – Terraform AWS provider configuration  
-- **variables.tf** – Terraform variable definitions  
-- **terraform.tfvars** – Deployment variable values  
+--------------------------------------------------------------------
 
----
+## FOUNDATIONAL: Deploy Steps
 
-# Foundational Tier – Jenkins Infrastructure Deployment
+From the foundational folder:
 
-The foundational stage deploys the base Jenkins environment using Terraform.
+1) Initialize:
+    terraform init
 
-## Infrastructure Created
+2) Validate:
+    terraform validate
 
-- EC2 instance in the **default VPC**
-- Security group allowing:
-  - SSH (22) from your IP
-  - Jenkins UI (8080)
-- Jenkins installed via bootstrap script
-- Private S3 bucket created for artifact storage
+3) Plan:
+    terraform plan
 
----
+4) Apply:
+    terraform apply
 
-## Step 1 – Create Terraform Configuration
+Terraform will output:
+    jenkins_public_ip = "X.X.X.X"
 
-Create a file called:
+--------------------------------------------------------------------
 
-```
-main.tf
-```
+## FOUNDATIONAL: Verify Jenkins UI
 
-This file defines the AWS resources including:
+Open in browser:
+    http://<EC2_PUBLIC_IP>:8080
 
-- EC2 instance
-- Security group
-- S3 bucket
-- Jenkins bootstrap script
+You should see "Unlock Jenkins".
 
-The EC2 instance uses **user data** to install Jenkins automatically during instance launch.
+Retrieve initial admin password (SSH in first):
 
----
+1) SSH:
+    chmod 400 <your-key>.pem
+    ssh -i <your-key>.pem ubuntu@<EC2_PUBLIC_IP>
 
-## Step 2 – Initialize Terraform
+2) Get password:
+    sudo cat /var/lib/jenkins/secrets/initialAdminPassword
 
-Inside the project directory run:
+--------------------------------------------------------------------
 
-```
-terraform init
-```
+# ADVANCED TIER
+## Goal
+Refactor Terraform so main.tf contains NO hardcoded values.
+Create:
+- providers.tf
+- variables.tf
+- terraform.tfvars
+and update main.tf to use variables.
 
-This downloads the AWS provider and initializes the Terraform working directory.
+## Advanced Folder Setup
 
----
+You can either:
+A) Refactor inside the same repo folder, OR
+B) Create a new folder like:
+   jenkins-terraform-advanced
 
-## Step 3 – Validate the Configuration
+For Advanced, you must have these files:
+    providers.tf
+    variables.tf
+    terraform.tfvars
+    main.tf
+
+--------------------------------------------------------------------
 
-```
-terraform validate
-```
+## ADVANCED: providers.tf (PASTE EXACTLY)
+
+    terraform {
+      required_providers {
+        aws = {
+          source  = "hashicorp/aws"
+          version = "~> 5.0"
+        }
+      }
+    }
+
+    provider "aws" {
+      region = var.aws_region
+    }
+
+--------------------------------------------------------------------
+
+## ADVANCED: variables.tf (PASTE EXACTLY)
+
+    variable "aws_region" {
+      description = "AWS region to deploy resources"
+      type        = string
+    }
+
+    variable "instance_type" {
+      description = "EC2 instance type"
+      type        = string
+    }
+
+    variable "key_pair_name" {
+      description = "Existing EC2 key pair name"
+      type        = string
+    }
+
+    variable "my_ip" {
+      description = "Public IP allowed for SSH (use /32)"
+      type        = string
+    }
+
+    variable "bucket_name" {
+      description = "S3 bucket name for Jenkins artifacts (must be globally unique)"
+      type        = string
+    }
+
+--------------------------------------------------------------------
+
+## ADVANCED: terraform.tfvars (PASTE + REPLACE VALUES)
+
+    aws_region    = "us-east-1"
+    instance_type = "t3.micro"
+    key_pair_name = "<KEY_PAIR_NAME>"
+    my_ip         = "<MY_PUBLIC_IP>/32"
+    bucket_name   = "<UNIQUE_BUCKET_NAME>"
+
+--------------------------------------------------------------------
+
+## ADVANCED: main.tf (PASTE EXACTLY)
+
+This is the foundational infrastructure rewritten to use variables (no hardcoding).
+
+    data "aws_ami" "ubuntu" {
+      most_recent = true
+      owners      = ["099720109477"] # Canonical
+
+      filter {
+        name   = "name"
+        values = ["ubuntu/images/hvm-ssd/ubuntu-jammy-22.04-amd64-server-*"]
+      }
+    }
+
+    resource "aws_security_group" "jenkins_sg" {
+      name        = "jenkins-sg"
+      description = "Allow SSH from my IP and Jenkins web access on 8080"
+
+      ingress {
+        description = "SSH from my public IP"
+        from_port   = 22
+        to_port     = 22
+        protocol    = "tcp"
+        cidr_blocks = [var.my_ip]
+      }
 
-This ensures the Terraform configuration syntax is valid.
-
----
-
-## Step 4 – Review the Execution Plan
-
-```
-terraform plan
-```
-
-Terraform will display which AWS resources will be created.
-
----
-
-## Step 5 – Deploy the Infrastructure
-
-```
-terraform apply
-```
-
-Terraform will create the infrastructure and output the **public IP address** of the Jenkins server.
-
----
-
-## Step 6 – Access Jenkins
-
-Open a browser and navigate to:
-
-```
-http://<EC2_PUBLIC_IP>:8080
-```
-
-You should see the Jenkins setup screen.
-
----
-
-## Step 7 – Retrieve the Jenkins Admin Password
-
-SSH into the EC2 instance:
-
-```
-ssh -i <keypair>.pem ubuntu@<EC2_PUBLIC_IP>
-```
-
-Retrieve the initial admin password:
-
-```
-sudo cat /var/lib/jenkins/secrets/initialAdminPassword
-```
-
-Use this password to unlock Jenkins in the web interface.
-
----
-
-# Advanced Tier – Terraform Refactor for Maintainability
-
-The advanced tier improves the Terraform configuration by removing hardcoded values and separating configuration into reusable components.
-
----
-
-## Refactor Overview
-
-The configuration is updated to include:
-
-- **providers.tf** – AWS provider configuration
-- **variables.tf** – Terraform variables
-- **terraform.tfvars** – Variable values
-- **main.tf** – Infrastructure resources referencing variables
-
----
-
-## providers.tf
-
-This file configures the AWS provider.
-
-Example:
-
-```
-provider "aws" {
-  region = var.aws_region
-}
-```
-
----
-
-## variables.tf
-
-This file defines all variables used by Terraform.
-
-Variables include:
-
-- AWS region
-- instance type
-- key pair name
-- allowed SSH IP
-- S3 bucket name
-
-Example:
-
-```
-variable "aws_region" {}
-variable "instance_type" {}
-variable "key_pair_name" {}
-variable "my_ip" {}
-variable "bucket_name" {}
-```
-
----
-
-## terraform.tfvars
-
-This file stores the values for deployment.
-
-Example:
-
-```
-aws_region    = "us-east-1"
-instance_type = "t3.micro"
-key_pair_name = "terraform-key"
-my_ip         = "X.X.X.X/32"
-bucket_name   = "jenkins-artifacts-example"
-```
-
-This refactor ensures that **main.tf contains no hardcoded values**, improving portability and reusability.
-
----
-
-# Complex Tier – Secure IAM Role-Based S3 Access
-
-The complex tier introduces secure authentication between the Jenkins server and the artifact storage bucket.
-
-Instead of using AWS credentials, the EC2 instance uses an **IAM Role with least privilege permissions**.
-
----
-
-## Infrastructure Added
-
-- IAM Role
-- IAM Policy with S3 permissions
-- IAM Instance Profile attached to EC2
-
-Permissions granted:
-
-- `s3:ListBucket`
-- `s3:GetObject`
-- `s3:PutObject`
-
----
-
-## IAM Role Workflow
-
-```
-EC2 Instance
-      |
-IAM Instance Profile
-      |
-IAM Role
-      |
-IAM Policy
-      |
-S3 Bucket
-```
-
-This allows Jenkins to interact with the S3 artifact bucket securely without storing credentials on the server.
-
----
-
-# Verify IAM Role Access
-
-SSH into the EC2 instance:
-
-```
-ssh -i <keypair>.pem ubuntu@<EC2_PUBLIC_IP>
-```
-
-Run:
-
-```
-aws s3 ls s3://<bucket-name>
-```
-
-Upload a test file:
-
-```
-echo "jenkins s3 role test" > role-test.txt
-aws s3 cp role-test.txt s3://<bucket-name>/
-```
-
-Download the file:
-
-```
-aws s3 cp s3://<bucket-name>/role-test.txt .
-```
-
-Verify contents:
-
-```
-cat role-test.txt
-```
-
-Successful upload and download confirms the IAM role permissions are working correctly.
-
----
-
-# Security Configuration
-
-Security group rules:
-
-```
-Inbound
-SSH (22)      → <MY_PUBLIC_IP>/32
-HTTP (8080)   → 0.0.0.0/0
-```
-
-S3 bucket configuration:
-
-- Public access blocked
-- IAM role authentication only
-- Least privilege permissions
-
----
-
-# Destroy Infrastructure
-
-To prevent unnecessary AWS costs, remove all infrastructure when testing is complete.
-
-```
-terraform destroy
-```
-
-Terraform will remove all resources created during deployment.
-
----
-
-# DevOps Concepts Demonstrated
-
-- Infrastructure as Code using Terraform
-- Terraform configuration refactoring
-- IAM role-based authentication
-- Least privilege security model
-- Jenkins CI/CD infrastructure deployment
-- Artifact storage using Amazon S3
-- Infrastructure validation and testing
-- Cloud cost governance through infrastructure teardown
-
----
+      ingress {
+        description = "Jenkins web access"
+        from_port   = 8080
+        to_port     = 8080
+        protocol    = "tcp"
+        cidr_blocks = ["0.0.0.0/0"]
+      }
+
+      egress {
+        description = "Allow all outbound"
+        from_port   = 0
+        to_port     = 0
+        protocol    = "-1"
+        cidr_blocks = ["0.0.0.0/0"]
+      }
+    }
+
+    resource "aws_s3_bucket" "jenkins_artifacts" {
+      bucket = var.bucket_name
+    }
+
+    resource "aws_s3_bucket_public_access_block" "jenkins_artifacts_block" {
+      bucket = aws_s3_bucket.jenkins_artifacts.id
+
+      block_public_acls       = true
+      block_public_policy     = true
+      ignore_public_acls      = true
+      restrict_public_buckets = true
+    }
+
+    resource "aws_instance" "jenkins" {
+      ami                    = data.aws_ami.ubuntu.id
+      instance_type          = var.instance_type
+      key_name               = var.key_pair_name
+      vpc_security_group_ids = [aws_security_group.jenkins_sg.id]
+
+      user_data = <<-EOF
+                  #!/bin/bash
+                  apt-get update -y
+                  apt-get install -y fontconfig openjdk-17-jre
+
+                  curl -fsSL https://pkg.jenkins.io/debian-stable/jenkins.io-2023.key | tee \
+                    /usr/share/keyrings/jenkins-keyring.asc > /dev/null
+                  echo deb [signed-by=/usr/share/keyrings/jenkins-keyring.asc] \
+                    https://pkg.jenkins.io/debian-stable binary/ | tee \
+                    /etc/apt/sources.list.d/jenkins.list > /dev/null
+
+                  apt-get update -y
+                  apt-get install -y jenkins
+                  systemctl enable jenkins
+                  systemctl start jenkins
+                  EOF
+
+      tags = {
+        Name = "jenkins-server"
+      }
+    }
+
+    output "jenkins_public_ip" {
+      value = aws_instance.jenkins.public_ip
+    }
+
+--------------------------------------------------------------------
+
+## ADVANCED: Deploy Steps
+
+From the advanced folder:
+
+    terraform init
+    terraform validate
+    terraform plan
+    terraform apply
+
+Verify Jenkins again:
+    http://<EC2_PUBLIC_IP>:8080
+
+--------------------------------------------------------------------
+
+# COMPLEX TIER
+## Goal
+Create an IAM Role that allows S3 read/write access for the Jenkins EC2 instance and attach it using an Instance Profile.
+
+This tier adds:
+- aws_iam_policy
+- aws_iam_role
+- aws_iam_role_policy_attachment
+- aws_iam_instance_profile
+- Update EC2 to attach instance profile
+
+--------------------------------------------------------------------
+
+## COMPLEX: Update main.tf (ADD THESE BLOCKS)
+
+In the ADVANCED main.tf, add these IAM resources (place them after the S3 bucket resources is fine):
+
+    resource "aws_iam_policy" "jenkins_s3_policy" {
+      name        = "jenkins-s3-access-policy"
+      description = "Allow EC2 instance to read/write Jenkins artifact bucket"
+
+      policy = jsonencode({
+        Version = "2012-10-17"
+        Statement = [
+          {
+            Effect = "Allow"
+            Action = [
+              "s3:ListBucket"
+            ]
+            Resource = aws_s3_bucket.jenkins_artifacts.arn
+          },
+          {
+            Effect = "Allow"
+            Action = [
+              "s3:GetObject",
+              "s3:PutObject"
+            ]
+            Resource = "${aws_s3_bucket.jenkins_artifacts.arn}/*"
+          }
+        ]
+      })
+    }
+
+    resource "aws_iam_role" "jenkins_role" {
+      name = "jenkins-ec2-role"
+
+      assume_role_policy = jsonencode({
+        Version = "2012-10-17"
+        Statement = [
+          {
+            Effect = "Allow"
+            Principal = {
+              Service = "ec2.amazonaws.com"
+            }
+            Action = "sts:AssumeRole"
+          }
+        ]
+      })
+    }
+
+    resource "aws_iam_role_policy_attachment" "jenkins_s3_attach" {
+      role       = aws_iam_role.jenkins_role.name
+      policy_arn = aws_iam_policy.jenkins_s3_policy.arn
+    }
+
+    resource "aws_iam_instance_profile" "jenkins_instance_profile" {
+      name = "jenkins-instance-profile"
+      role = aws_iam_role.jenkins_role.name
+    }
+
+Then update the EC2 resource by adding this line inside aws_instance "jenkins":
+
+    iam_instance_profile = aws_iam_instance_profile.jenkins_instance_profile.name
+
+--------------------------------------------------------------------
+
+## COMPLEX: Deploy Steps
+
+From the complex folder / final repo folder:
+
+    terraform init
+    terraform validate
+    terraform plan
+    terraform apply
+
+--------------------------------------------------------------------
+
+## COMPLEX: Verify IAM Role Access (No Credentials)
+
+SSH to the instance:
+    chmod 400 <your-key>.pem
+    ssh -i <your-key>.pem ubuntu@<EC2_PUBLIC_IP>
+
+1) Confirm role is attached:
+    curl -s http://169.254.169.254/latest/meta-data/iam/security-credentials/
+
+Expected output:
+    jenkins-ec2-role
+
+2) Confirm AWS CLI exists:
+    aws --version
+
+If not installed:
+    sudo apt update
+    sudo apt install awscli -y
+
+3) Run S3 tests without credentials:
+
+List bucket:
+    aws s3 ls s3://<bucket-name>
+
+Upload:
+    echo "jenkins s3 role test" > role-test.txt
+    aws s3 cp role-test.txt s3://<bucket-name>/
+
+Download:
+    rm -f role-test.txt
+    aws s3 cp s3://<bucket-name>/role-test.txt .
+    cat role-test.txt
+
+Expected output:
+    jenkins s3 role test
+
+--------------------------------------------------------------------
+
+# TEARDOWN (Avoid AWS Charges)
+
+Destroy everything:
+    terraform destroy
+
+If destroy fails with BucketNotEmpty, delete the object first:
+    aws s3 rm s3://<bucket-name>/role-test.txt
+
+Then destroy again:
+    terraform destroy
+
+--------------------------------------------------------------------
 
 # Author
 
-Cameron A. Parker  
-Cloud / DevOps Engineer
-
-GitHub  
-https://github.com/forgisonajeep
-
-LinkedIn  
-https://www.linkedin.com/in/cameronaparker/
-
-Medium  
-https://medium.com/@parker_c_18
+Cameron A. Parker
+GitHub:   https://github.com/forgisonajeep
+LinkedIn: https://www.linkedin.com/in/cameronaparker/
+Medium:   https://medium.com/@parker_c_18
