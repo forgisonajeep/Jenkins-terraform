@@ -65,107 +65,111 @@ Inside the folder, create ONE file:
 ## FOUNDATIONAL: main.tf (PASTE EXACTLY)
 
 IMPORTANT: Replace these placeholders before running Terraform:
-- <AWS_REGION>
-- <KEY_PAIR_NAME>
-- <MY_PUBLIC_IP>/32
-- <UNIQUE_BUCKET_NAME>
 
-    terraform {
-      required_providers {
-        aws = {
-          source  = "hashicorp/aws"
-          version = "~> 5.0"
-        }
-      }
+- `<AWS_REGION>`
+- `<KEY_PAIR_NAME>`
+- `<MY_PUBLIC_IP>/32`
+- `<UNIQUE_BUCKET_NAME>`
+
+```
+terraform {
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = "~> 5.0"
     }
+  }
+}
 
-    provider "aws" {
-      region = "<AWS_REGION>"
-    }
+provider "aws" {
+  region = "<AWS_REGION>"
+}
 
-    data "aws_ami" "ubuntu" {
-      most_recent = true
-      owners      = ["099720109477"] # Canonical
+data "aws_ami" "ubuntu" {
+  most_recent = true
+  owners      = ["099720109477"] # Canonical
 
-      filter {
-        name   = "name"
-        values = ["ubuntu/images/hvm-ssd/ubuntu-jammy-22.04-amd64-server-*"]
-      }
-    }
+  filter {
+    name   = "name"
+    values = ["ubuntu/images/hvm-ssd/ubuntu-jammy-22.04-amd64-server-*"]
+  }
+}
 
-    resource "aws_security_group" "jenkins_sg" {
-      name        = "jenkins-sg"
-      description = "Allow SSH from my IP and Jenkins web access on 8080"
+resource "aws_security_group" "jenkins_sg" {
+  name        = "jenkins-sg"
+  description = "Allow SSH from my IP and Jenkins web access on 8080"
 
-      ingress {
-        description = "SSH from my public IP"
-        from_port   = 22
-        to_port     = 22
-        protocol    = "tcp"
-        cidr_blocks = ["<MY_PUBLIC_IP>/32"]
-      }
+  ingress {
+    description = "SSH from my public IP"
+    from_port   = 22
+    to_port     = 22
+    protocol    = "tcp"
+    cidr_blocks = ["<MY_PUBLIC_IP>/32"]
+  }
 
-      ingress {
-        description = "Jenkins web access"
-        from_port   = 8080
-        to_port     = 8080
-        protocol    = "tcp"
-        cidr_blocks = ["0.0.0.0/0"]
-      }
+  ingress {
+    description = "Jenkins web access"
+    from_port   = 8080
+    to_port     = 8080
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
 
-      egress {
-        description = "Allow all outbound"
-        from_port   = 0
-        to_port     = 0
-        protocol    = "-1"
-        cidr_blocks = ["0.0.0.0/0"]
-      }
-    }
+  egress {
+    description = "Allow all outbound"
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+}
 
-    resource "aws_s3_bucket" "jenkins_artifacts" {
-      bucket = "<UNIQUE_BUCKET_NAME>"
-    }
+resource "aws_s3_bucket" "jenkins_artifacts" {
+  bucket = "<UNIQUE_BUCKET_NAME>"
+}
 
-    resource "aws_s3_bucket_public_access_block" "jenkins_artifacts_block" {
-      bucket = aws_s3_bucket.jenkins_artifacts.id
+resource "aws_s3_bucket_public_access_block" "jenkins_artifacts_block" {
+  bucket = aws_s3_bucket.jenkins_artifacts.id
 
-      block_public_acls       = true
-      block_public_policy     = true
-      ignore_public_acls      = true
-      restrict_public_buckets = true
-    }
+  block_public_acls       = true
+  block_public_policy     = true
+  ignore_public_acls      = true
+  restrict_public_buckets = true
+}
 
-    resource "aws_instance" "jenkins" {
-      ami                    = data.aws_ami.ubuntu.id
-      instance_type          = "t3.micro"
-      key_name               = "<KEY_PAIR_NAME>"
-      vpc_security_group_ids = [aws_security_group.jenkins_sg.id]
+resource "aws_instance" "jenkins" {
+  ami                    = data.aws_ami.ubuntu.id
+  instance_type          = "t3.micro"
+  key_name               = "<KEY_PAIR_NAME>"
+  vpc_security_group_ids = [aws_security_group.jenkins_sg.id]
 
-      user_data = <<-EOF
-                  #!/bin/bash
-                  apt-get update -y
-                  apt-get install -y fontconfig openjdk-17-jre
+  user_data = <<-EOF
+#!/bin/bash
+apt-get update -y
+apt-get install -y fontconfig openjdk-17-jre
 
-                  curl -fsSL https://pkg.jenkins.io/debian-stable/jenkins.io-2023.key | tee \
-                    /usr/share/keyrings/jenkins-keyring.asc > /dev/null
-                  echo deb [signed-by=/usr/share/keyrings/jenkins-keyring.asc] \
-                    https://pkg.jenkins.io/debian-stable binary/ | tee \
-                    /etc/apt/sources.list.d/jenkins.list > /dev/null
+curl -fsSL https://pkg.jenkins.io/debian-stable/jenkins.io-2023.key | tee \
+/usr/share/keyrings/jenkins-keyring.asc > /dev/null
 
-                  apt-get update -y
-                  apt-get install -y jenkins
-                  systemctl enable jenkins
-                  systemctl start jenkins
-                  EOF
+echo deb [signed-by=/usr/share/keyrings/jenkins-keyring.asc] \
+https://pkg.jenkins.io/debian-stable binary/ | tee \
+/etc/apt/sources.list.d/jenkins.list > /dev/null
 
-      tags = {
-        Name = "jenkins-server"
-      }
-    }
+apt-get update -y
+apt-get install -y jenkins
+systemctl enable jenkins
+systemctl start jenkins
+EOF
 
-    output "jenkins_public_ip" {
-      value = aws_instance.jenkins.public_ip
-    }
+  tags = {
+    Name = "jenkins-server"
+  }
+}
+
+output "jenkins_public_ip" {
+  value = aws_instance.jenkins.public_ip
+}
+```
 
 --------------------------------------------------------------------
 
