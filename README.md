@@ -20,13 +20,6 @@ The project was implemented in three stages:
 1. Foundational Infrastructure Deployment  
 2. Terraform Refactor for Maintainability  
 3. Secure IAM Role-Based S3 Artifact Access  
-
----
-
-## Architecture Diagram
-
-![alt text](image.png)
-
 ---
 
 ## Prerequisites
