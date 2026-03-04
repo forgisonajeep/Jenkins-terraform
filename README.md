@@ -1,3 +1,29 @@
+## Table of Contents
+
+- [What This Deploys (Final / Complex)](#what-this-deploys-final--complex)
+- [Prerequisites](#prerequisites)
+- [FOUNDATIONAL TIER](#foundational-tier)
+  - [Goal](#goal)
+  - [Foundational Folder Setup](#foundational-folder-setup)
+  - [FOUNDATIONAL: main.tf (PASTE EXACTLY)](#foundational-maintf-paste-exactly)
+  - [FOUNDATIONAL: Deploy Steps](#foundational-deploy-steps)
+  - [FOUNDATIONAL: Verify Jenkins UI](#foundational-verify-jenkins-ui)
+- [ADVANCED TIER](#advanced-tier)
+  - [Goal](#goal-1)
+  - [Advanced Folder Setup](#advanced-folder-setup)
+  - [ADVANCED: providers.tf (PASTE EXACTLY)](#advanced-providerstf-paste-exactly)
+  - [ADVANCED: variables.tf (PASTE EXACTLY)](#advanced-variablestf-paste-exactly)
+  - [ADVANCED: terraform.tfvars (PASTE + REPLACE VALUES)](#advanced-terraformtfvars-paste--replace-values)
+  - [ADVANCED: main.tf (PASTE EXACTLY)](#advanced-maintf-paste-exactly)
+  - [ADVANCED: Deploy Steps](#advanced-deploy-steps)
+- [COMPLEX TIER](#complex-tier)
+  - [Goal](#goal-2)
+  - [COMPLEX: Update main.tf (ADD THESE BLOCKS)](#complex-update-maintf-add-these-blocks)
+  - [COMPLEX: Deploy Steps](#complex-deploy-steps)
+  - [COMPLEX: Verify IAM Role Access (No Credentials)](#complex-verify-iam-role-access-no-credentials)
+- [TEARDOWN (Avoid AWS Charges)](#teardown-avoid-aws-charges)
+- [Author](#author)
+
 # AWS Terraform Project: Jenkins Server (Foundational → Advanced → Complex)
 
 This repository documents how to deploy a Jenkins server on AWS using Terraform, completed in three tiers:
